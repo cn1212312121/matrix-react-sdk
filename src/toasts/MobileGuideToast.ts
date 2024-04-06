@@ -20,7 +20,7 @@ import ToastStore from "../stores/ToastStore";
 import SdkConfig from "../SdkConfig";
 
 const onAccept = (): void => {
-    window.location.href = "mobile_guide/";
+    window.location.href = "login/";
 };
 
 const onReject = (): void => {

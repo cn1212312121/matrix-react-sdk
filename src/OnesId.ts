@@ -3,8 +3,9 @@ import { IMatrixClientCreds } from "matrix-react-sdk/src/MatrixClientPeg";
 const BASE_URL = 'http://localhost:5002/api'
 class OnesId
 {
-    async getAuth(username:any){
+    async getAuth(username:any){   
         try{
+          
              let data = JSON.stringify({
                 "username": username
              });

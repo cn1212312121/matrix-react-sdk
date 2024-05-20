@@ -32,6 +32,7 @@ import { getOidcClientId } from "./utils/oidc/registerClient";
 import { IConfigOptions } from "./IConfigOptions";
 import SdkConfig from "./SdkConfig";
 import { isUserRegistrationSupported } from "./utils/oidc/isUserRegistrationSupported";
+import OnesId from "./OnesId";
 
 /**
  * Login flows supported by this client
@@ -143,65 +144,59 @@ export default class Login {
 
     public loginViaPassword(
         username: string | undefined,
-        phoneCountry: string | undefined,
-        phoneNumber: string | undefined,
-        password: string,
     ): Promise<IMatrixClientCreds> {
-        const isEmail = !!username && username.indexOf("@") > 0;
 
-        let identifier;
-        if (phoneCountry && phoneNumber) {
-            identifier = {
-                type: "m.id.phone",
-                country: phoneCountry,
-                phone: phoneNumber,
-                // XXX: Synapse historically wanted `number` and not `phone`
-                number: phoneNumber,
-            };
-        } else if (isEmail) {
-            identifier = {
-                type: "m.id.thirdparty",
-                medium: "email",
-                address: username,
-            };
-        } else {
-            identifier = {
-                type: "m.id.user",
-                user: username,
-            };
-        }
+        /**
+         * login
+         */
 
-        const loginParams = {
-            password,
-            identifier,
-            initial_device_display_name: this.defaultDeviceDisplayName,
-        };
+        console.log(username); //onesid
+        console.log('url1 ',this.isUrl);
+        console.log('url2',this.fallbackHsUrl!);
+        console.log('url3',this.hsUrl);
 
-        const tryFallbackHs = (originalError: Error): Promise<IMatrixClientCreds> => {
-            return sendLoginRequest(this.fallbackHsUrl!, this.isUrl, "m.login.password", loginParams).catch(
-                (fallbackError) => {
-                    logger.log("fallback HS login failed", fallbackError);
-                    // throw the original error
-                    throw originalError;
-                },
-            );
-        };
 
-        let originalLoginError: Error | null = null;
-        return sendLoginRequest(this.hsUrl, this.isUrl, "m.login.password", loginParams)
-            .catch((error) => {
-                originalLoginError = error;
-                if (error.httpStatus === 403) {
-                    if (this.fallbackHsUrl) {
-                        return tryFallbackHs(originalLoginError!);
+        return new Promise(async(resolve,reject)=>{
+            try{ 
+                const onesid = new OnesId();
+                const auth_req_id = await onesid.getAuth(username);
+
+                let time = setInterval(async()=>{
+                    try{
+                        const status = await onesid.checkStatus(auth_req_id);
+                        if(status.access_token){
+                            const {access_token} = status;
+                            clearInterval(time);
+                            await onesid.checkLoginExists(access_token);
+                            await onesid.register(access_token);
+                            const response = await onesid.login(access_token,username);
+                            console.log('response ',response);
+                            let dataObj:IMatrixClientCreds={
+                                userId: `${response.userId}`,
+                                accessToken: `${response.accessToken}`,
+                                homeserverUrl: `${response.homeserverUrl}`,
+                                identityServerUrl:`${response.identityServerUrl}`,
+                                deviceId: `${response.deviceId}`
+                            }
+                            console.log("demo ",dataObj);
+                            resolve(dataObj);
+
+                        }
+
+                    }catch(error){
+                        console.log(error);
+                        reject(error);
                     }
-                }
-                throw originalLoginError;
-            })
-            .catch((error) => {
+                },1000*3);
+
+
+
+            }catch(error){
                 logger.log("Login failed", error);
-                throw error;
-            });
+                reject(error);
+            }
+
+        });
     }
 }
 

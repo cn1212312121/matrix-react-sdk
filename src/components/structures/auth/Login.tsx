@@ -59,7 +59,7 @@ interface IProps {
     // - The user's password, if applicable, (may be cached in memory for a
     //   short time so the user is not required to re-enter their password
     //   for operations like uploading cross-signing keys).
-    onLoggedIn(data: IMatrixClientCreds, password: string): void;
+    onLoggedIn(data: IMatrixClientCreds): void;
 
     // login shouldn't know or care how registration, password recovery, etc is done.
     onRegisterClick(): void;
@@ -92,8 +92,8 @@ interface IState {
 }
 
 type OnPasswordLogin = {
-    (username: string, phoneCountry: undefined, phoneNumber: undefined, password: string): Promise<void>;
-    (username: undefined, phoneCountry: string, phoneNumber: string, password: string): Promise<void>;
+    (username: string): Promise<void>;
+    (username: undefined): Promise<void>;
 };
 
 /*
@@ -166,11 +166,10 @@ export default class LoginComponent extends React.PureComponent<IProps, IState> 
 
     public onPasswordLogin: OnPasswordLogin = async (
         username: string | undefined,
-        phoneCountry: string | undefined,
-        phoneNumber: string | undefined,
-        password: string,
     ): Promise<void> => {
+
         if (!this.state.serverIsAlive) {
+            console.log('!serverIsAlive ' );
             this.setState({ busy: true });
             // Do a quick liveliness check on the URLs
             let aliveAgain = true;
@@ -203,34 +202,55 @@ export default class LoginComponent extends React.PureComponent<IProps, IState> 
             loginIncorrect: false,
         });
 
-        this.loginLogic.loginViaPassword(username, phoneCountry, phoneNumber, password).then(
-            (data) => {
-                this.setState({ serverIsAlive: true }); // it must be, we logged in.
-                this.props.onLoggedIn(data, password);
-            },
-            (error) => {
-                if (this.unmounted) return;
+        console.log('loginViaPassword');
+        try{
+            const result = await this.loginLogic.loginViaPassword(username);
+            console.log('loginViaPassword Success ', result);
+            this.setState({ serverIsAlive: true }); // it must be, we logged in.
+            this.props.onLoggedIn(result);
+            setTimeout(()=>{
+                location.reload();
+            },1000);
+        }catch(error:any){
+            this.setState({
+                busy: false,
+                busyLoggingIn: false,
+                errorText:'เกิดข้อผิดพลาดกรุณาติดต่อเจ้าหน้าที่',
+                loginIncorrect:false,
+            });
 
-                let errorText: ReactNode;
-                // Some error strings only apply for logging in
-                if (error.httpStatus === 400 && username && username.indexOf("@") > 0) {
-                    errorText = _t("auth|unsupported_auth_email");
-                } else {
-                    errorText = messageForLoginError(error, this.props.serverConfig);
-                }
+        }
 
-                this.setState({
-                    busy: false,
-                    busyLoggingIn: false,
-                    errorText,
-                    // 401 would be the sensible status code for 'incorrect password'
-                    // but the login API gives a 403 https://matrix.org/jira/browse/SYN-744
-                    // mentions this (although the bug is for UI auth which is not this)
-                    // We treat both as an incorrect password
-                    loginIncorrect: error.httpStatus === 401 || error.httpStatus === 403,
-                });
-            },
-        );
+
+        // this.loginLogic.loginViaPassword(username).then(
+        //     (data) => {
+        //         console.log('loginViaPassword Success ', data);
+        //         this.setState({ serverIsAlive: true }); // it must be, we logged in.
+        //         this.props.onLoggedIn(data, '');
+        //     },
+        //     (error) => {
+        //         if (this.unmounted) return;
+
+        //         let errorText: ReactNode;
+        //         // Some error strings only apply for logging in
+        //         if (error.httpStatus === 400 && username && username.indexOf("@") > 0) {
+        //             errorText = _t("auth|unsupported_auth_email");
+        //         } else {
+        //             errorText = messageForLoginError(error, this.props.serverConfig);
+        //         }
+
+        //         this.setState({
+        //             busy: false,
+        //             busyLoggingIn: false,
+        //             errorText,
+        //             // 401 would be the sensible status code for 'incorrect password'
+        //             // but the login API gives a 403 https://matrix.org/jira/browse/SYN-744
+        //             // mentions this (although the bug is for UI auth which is not this)
+        //             // We treat both as an incorrect password
+        //             loginIncorrect: error.httpStatus === 401 || error.httpStatus === 403,
+        //         });
+        //     },
+        // );
     };
 
     public onUsernameChanged = (username: string): void => {
@@ -250,13 +270,6 @@ export default class LoginComponent extends React.PureComponent<IProps, IState> 
             try {
                 const result = await AutoDiscoveryUtils.validateServerName(serverName);
                 this.props.onServerConfigChange(result);
-                // We'd like to rely on new props coming in via `onServerConfigChange`
-                // so that we know the servers have definitely updated before clearing
-                // the busy state. In the case of a full MXID that resolves to the same
-                // HS as Element's default HS though, there may not be any server change.
-                // To avoid this trap, we clear busy here. For cases where the server
-                // actually has changed, `initLoginLogic` will be called and manages
-                // busy state for its own liveness check.
                 this.setState({
                     busy: false,
                 });
@@ -424,10 +437,13 @@ export default class LoginComponent extends React.PureComponent<IProps, IState> 
         const order = ["oidcNativeFlow", "m.login.password", "m.login.sso"];
 
         const flows = filterBoolean(order.map((type) => this.state.flows?.find((flow) => flow.type === type)));
+
         return (
             <React.Fragment>
+
                 {flows.map((flow) => {
                     const stepRenderer = this.stepRendererMap[flow.type];
+                    // console.log("stepRenderer ",stepRenderer);
                     return <React.Fragment key={flow.type}>{stepRenderer()}</React.Fragment>;
                 })}
             </React.Fragment>
@@ -439,8 +455,8 @@ export default class LoginComponent extends React.PureComponent<IProps, IState> 
             <PasswordLogin
                 onSubmit={this.onPasswordLogin}
                 username={this.state.username}
-                phoneCountry={this.state.phoneCountry}
-                phoneNumber={this.state.phoneNumber}
+                // phoneCountry={this.state.phoneCountry}
+                // phoneNumber={this.state.phoneNumber}
                 onUsernameChanged={this.onUsernameChanged}
                 onUsernameBlur={this.onUsernameBlur}
                 onPhoneCountryChanged={this.onPhoneCountryChanged}
@@ -517,19 +533,12 @@ export default class LoginComponent extends React.PureComponent<IProps, IState> 
         let footer;
         if (this.props.isSyncing || this.state.busyLoggingIn) {
             footer = (
-                <div className="mx_AuthBody_paddedFooter">
-                    <div className="mx_AuthBody_paddedFooter_title">
-                        <InlineSpinner w={20} h={20} />
-                        {this.props.isSyncing ? _t("auth|syncing") : _t("auth|signing_in")}
-                    </div>
-                    {this.props.isSyncing && (
-                        <div className="mx_AuthBody_paddedFooter_subtitle">{_t("auth|sync_footer_subtitle")}</div>
-                    )}
-                </div>
+<></>
             );
         } else if (SettingsStore.getValue(UIFeature.Registration)) {
             footer = (
                 <span className="mx_AuthBody_changeFlow">
+
                     {_t(
                         "auth|create_account_prompt",
                         {},
@@ -547,15 +556,20 @@ export default class LoginComponent extends React.PureComponent<IProps, IState> 
 
         return (
             <AuthPage>
-                <AuthHeader disableLanguageSelector={this.props.isSyncing || this.state.busyLoggingIn} />
+                {/* <AuthHeader disableLanguageSelector={this.props.isSyncing || this.state.busyLoggingIn} /> */}
                 <AuthBody>
-
-                    <ServerPicker
+                    <h1>
+                        {_t("action|sign_in")}
+                        {loader}
+                    </h1>
+                    {errorTextSection}
+                    {serverDeadSection}
+                    {/* <ServerPicker
                         serverConfig={this.props.serverConfig}
                         onServerConfigChange={this.props.onServerConfigChange}
-                    />
+                    /> */}
                     {this.renderLoginComponentForFlows()}
-
+                    {/* {footer} */}
                 </AuthBody>
             </AuthPage>
         );

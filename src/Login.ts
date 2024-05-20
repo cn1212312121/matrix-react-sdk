@@ -142,6 +142,7 @@ export default class Login {
         return this.flows;
     }
 
+    
     public loginViaPassword(
         username: string | undefined,
     ): Promise<IMatrixClientCreds> {
